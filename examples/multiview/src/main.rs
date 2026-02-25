@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use fastui_cosmic::{
-    Action, Attrs, Buffer, Edit, Family, FontSystem, Metrics, Scroll, Shaping, SwashCache,
+    Attrs, Buffer, Edit, Family, FontSystem, Metrics, Scroll, Shaping, SwashCache,
 };
 use std::{collections::HashMap, env, fs, num::NonZeroU32, rc::Rc, slice};
 use tiny_skia::{Color, Paint, PixmapMut, Rect, Transform};

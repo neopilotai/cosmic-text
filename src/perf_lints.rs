@@ -35,6 +35,13 @@
 //! use fastui_cosmic::perf_lints::{check_render_fn, lint_codes::*, PerformanceLinter};
 //! ```
 
+#[cfg(not(feature = "std"))]
+use alloc::string::{String, ToString};
+#[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 /// Lint error codes for GUI/TUI performance
 pub mod lint_codes {
     //! Lint error codes that can be used with `#[warn(lint_code)]`
@@ -347,9 +354,19 @@ impl PerformanceLinter {
                         .next()
                         .unwrap_or("");
                     if check::is_render_fn(fn_name) {
+                        let message = {
+                            #[cfg(feature = "std")]
+                            {
+                                format!("Hot path function '{}' missing #[inline]", fn_name)
+                            }
+                            #[cfg(not(feature = "std"))]
+                            {
+                                "Hot path function missing #[inline]".to_string()
+                            }
+                        };
                         issues.push(LintIssue {
                             code: lint_codes::MISSING_INLINE,
-                            message: format!("Hot path function '{}' missing #[inline]", fn_name),
+                            message,
                             line: line_num + 1,
                             column: 1,
                             suggestion: Some("Add #[inline] attribute".to_string()),
