@@ -159,6 +159,56 @@ impl SwashCache {
         swash_outline_commands(font_system, &mut self.context, cache_key)
     }
 
+    /// Pre-render multiple glyphs at once for faster first-frame rendering
+    ///
+    /// This warms the glyph cache before actual rendering, reducing
+    /// frame drops during initial display.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let glyphs = buffer.layout_runs()
+    ///     .flat_map(|run| run.glyphs)
+    ///     .map(|g| g.cache_key);
+    /// swash_cache.prerender_glyphs(&mut font_system, glyphs);
+    /// ```
+    pub fn prerender_glyphs<I: IntoIterator<Item = CacheKey>>(
+        &mut self,
+        font_system: &mut FontSystem,
+        cache_keys: I,
+    ) {
+        for cache_key in cache_keys {
+            self.get_image(font_system, cache_key);
+        }
+    }
+
+    /// Pre-render all glyphs in a text buffer
+    ///
+    /// Convenience method that extracts cache keys from a buffer's layout runs.
+    pub fn prerender_buffer(&mut self, font_system: &mut FontSystem, buffer: &crate::Buffer) {
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                self.get_image(font_system, physical.cache_key);
+            }
+        }
+    }
+
+    /// Clear the image cache to free memory
+    pub fn clear_cache(&mut self) {
+        self.image_cache.clear();
+        self.outline_command_cache.clear();
+    }
+
+    /// Get the number of cached images
+    pub fn cached_count(&self) -> usize {
+        self.image_cache.len()
+    }
+
+    /// Get the number of cached outline commands
+    pub fn outline_cache_count(&self) -> usize {
+        self.outline_command_cache.len()
+    }
+
     /// Enumerate pixels in an Image, use `with_image` for better performance
     pub fn with_pixels<F: FnMut(i32, i32, Color)>(
         &mut self,

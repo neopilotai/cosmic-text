@@ -1,4 +1,4 @@
-use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, Wrap};
+use fastui_cosmic::{Attrs, Buffer, FontSystem, Metrics, Shaping, Wrap};
 
 // Tests the ability to fallback to glyph wrapping when a word can't fit on a line by itself.
 // No line should ever overflow the buffer size.
@@ -15,7 +15,7 @@ fn fastui_word_fallback() {
     let mut buffer = buffer.borrow_with(&mut font_system);
 
     buffer.set_wrap(Wrap::WordOrGlyph);
-    buffer.set_text("Lorem ipsum dolor sit amet, qui minim labore adipisicing minim sint cillum sint consectetur cupidatat.", &Attrs::new().family(cosmic_text::Family::Name("Inter")), Shaping::Advanced);
+    buffer.set_text("Lorem ipsum dolor sit amet, qui minim labore adipisicing minim sint cillum sint consectetur cupidatat.", &Attrs::new().family(fastui_cosmic::Family::Name("Inter")), Shaping::Advanced);
     buffer.set_size(Some(50.0), Some(1000.0));
 
     buffer.shape_until_scroll(false);

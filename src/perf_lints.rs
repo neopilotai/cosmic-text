@@ -505,7 +505,7 @@ pub mod macros {
 #[cfg(test)]
 mod tests {
     use super::check::{check_render_fn, is_render_fn, is_render_type, recommended_hasher};
-    use super::{lint_codes::*, LintIssue, PerformanceLinter};
+    use super::{lint_codes::*, PerformanceLinter};
 
     #[test]
     fn test_is_render_fn() {

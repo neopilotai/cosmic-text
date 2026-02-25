@@ -1,5 +1,5 @@
 use common::DrawTestCfg;
-use cosmic_text::Attrs;
+use fastui_cosmic::Attrs;
 use fontdb::Family;
 
 mod common;

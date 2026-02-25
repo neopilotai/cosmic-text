@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use cosmic_text::{
+use fastui_cosmic::{
     Action, Attrs, Buffer, Edit, Family, FontSystem, Metrics, Scroll, Shaping, SwashCache,
 };
 use std::{collections::HashMap, env, fs, num::NonZeroU32, rc::Rc, slice};
@@ -114,7 +114,7 @@ fn main() {
                         let transform = Transform::identity();
                         buffer.draw(
                             &mut swash_cache,
-                            cosmic_text::Color::rgb(0xFF, 0xFF, 0xFF),
+                            fastui_cosmic::Color::rgb(0xFF, 0xFF, 0xFF),
                             |x, y, w, h, color| {
                                 paint.set_color_rgba8(color.r(), color.g(), color.b(), color.a());
                                 pixmap.fill_rect(

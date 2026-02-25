@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cosmic_text::{
+use fastui_cosmic::{
     fontdb::Database, Attrs, AttrsOwned, Buffer, Color, Family, FontSystem, Metrics, Shaping,
     SwashCache,
 };

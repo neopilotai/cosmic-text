@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use cosmic_text::{Buffer, Cursor, Edit, Metrics, SyntaxEditor, SyntaxSystem, ViEditor};
+use fastui_cosmic::{Buffer, Cursor, Edit, Metrics, SyntaxEditor, SyntaxSystem, ViEditor};
 
 static SYNTAX_SYSTEM: OnceLock<SyntaxSystem> = OnceLock::new();
 
