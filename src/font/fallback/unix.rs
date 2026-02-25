@@ -27,7 +27,7 @@ impl Fallback for PlatformFallback {
 }
 
 // Fallbacks to use after any script specific fallbacks
-const fn common_fallback() -> &'static [&'static str] {
+fn common_fallback() -> &'static [&'static str] {
     //TODO: abstract style (sans/serif/monospaced)
     &[
         /* Sans-serif fallbacks */
@@ -49,7 +49,7 @@ const fn common_fallback() -> &'static [&'static str] {
 }
 
 // Fallbacks to never use
-const fn forbidden_fallback() -> &'static [&'static str] {
+fn forbidden_fallback() -> &'static [&'static str] {
     &[]
 }
 

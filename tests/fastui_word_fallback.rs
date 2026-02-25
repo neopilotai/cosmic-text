@@ -3,7 +3,7 @@ use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, Wrap};
 // Tests the ability to fallback to glyph wrapping when a word can't fit on a line by itself.
 // No line should ever overflow the buffer size.
 #[test]
-fn wrap_word_fallback() {
+fn fastui_word_fallback() {
     let mut font_system =
         FontSystem::new_with_locale_and_db("en-US".into(), fontdb::Database::new());
     let font = std::fs::read("fonts/Inter-Regular.ttf").unwrap();

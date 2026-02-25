@@ -2,12 +2,10 @@
 
 use core::fmt::Display;
 
-use crate::{math, CacheKey, CacheKeyFlags, Color};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-#[cfg(not(feature = "std"))]
-use core_maths::CoreFloat;
+use crate::{math, CacheKey, CacheKeyFlags, Color};
 
 /// A laid out glyph
 #[derive(Clone, Debug)]
@@ -18,8 +16,6 @@ pub struct LayoutGlyph {
     pub end: usize,
     /// Font size of the glyph
     pub font_size: f32,
-    /// Font weight of the glyph
-    pub font_weight: fontdb::Weight,
     /// Line height of the glyph, will override buffer setting
     pub line_height_opt: Option<f32>,
     /// Font id of the glyph
@@ -80,10 +76,9 @@ impl LayoutGlyph {
             self.glyph_id,
             self.font_size * scale,
             (
-                (self.x + x_offset).mul_add(scale, offset.0),
-                math::truncf((self.y - y_offset).mul_add(scale, offset.1)), // Hinting in Y axis
+                (self.x + x_offset) * scale + offset.0,
+                math::truncf((self.y - y_offset) * scale + offset.1), // Hinting in Y axis
             ),
-            self.font_weight,
             self.cache_key_flags,
         );
 
@@ -150,52 +145,4 @@ impl Display for Align {
             Self::End => write!(f, "End"),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum Ellipsize {
-    /// No Ellipsizing
-    #[default]
-    None,
-    /// Ellipsizes the start of the last visual line that fits within the `EllipsizeHeightLimit`
-    Start(EllipsizeHeightLimit),
-    /// Ellipsizes the middle of the last visual line that fits within the `EllipsizeHeightLimit`.
-    Middle(EllipsizeHeightLimit),
-    /// Ellipsizes the end of the last visual line that fits within the `EllipsizeHeightLimit`.
-    End(EllipsizeHeightLimit),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum EllipsizeHeightLimit {
-    /// Number of lines to show before ellipsizing the rest. Only works if `Wrap` is NOT set to
-    /// `Wrap::None`. Otherwise, it will be ignored and the behavior will be the same as `Lines(1)`
-    Lines(usize),
-    /// Ellipsizes the last line that fits within the given height limit. If `Wrap` is set to
-    /// `Wrap::None`, the behavior will be the same as `Lines(1)`
-    Height(f32),
-}
-
-/// Metrics hinting strategy
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Default)]
-pub enum Hinting {
-    /// No metrics hinting.
-    ///
-    /// Glyphs will have subpixel coordinates.
-    ///
-    /// This is the default.
-    #[default]
-    Disabled,
-
-    /// Metrics hinting.
-    ///
-    /// Glyphs will be snapped to integral coordinates in the X-axis during layout.
-    /// This can improve readability for smaller text and/or low-DPI screens.
-    ///
-    /// However, in order to get the right effect, you must use physical coordinates
-    /// during layout and avoid further scaling when rendering. Otherwise, the rounding
-    /// errors can accumulate and glyph distances may look erratic.
-    ///
-    /// In other words, metrics hinting makes layouting dependent of the target
-    /// resolution.
-    Enabled,
 }

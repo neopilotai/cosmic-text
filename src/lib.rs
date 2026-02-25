@@ -4,7 +4,7 @@
 //!
 //! This library provides advanced text handling in a generic way. It provides abstractions for
 //! shaping, font discovery, font fallback, layout, rasterization, and editing. Shaping utilizes
-//! harfrust, font discovery utilizes fontdb, and the rasterization is optional and utilizes
+//! rustybuzz, font discovery utilizes fontdb, and the rasterization is optional and utilizes
 //! swash. The other features are developed internal to this library.
 //!
 //! It is recommended that you start by creating a [`FontSystem`], after which you can create a
@@ -12,7 +12,7 @@
 //! point, you can use the `SwashCache` to rasterize glyphs into either images or pixels.
 //!
 //! ```
-//! use cosmic_text::{Attrs, Color, FontSystem, SwashCache, Buffer, Metrics, Shaping};
+//! use fastui_cosmic::{Attrs, Color, FontSystem, SwashCache, Buffer, Metrics, Shaping};
 //!
 //! // A FontSystem provides access to detected system fonts, create one per application
 //! let mut font_system = FontSystem::new();
@@ -36,7 +36,7 @@
 //! let attrs = Attrs::new();
 //!
 //! // Add some text!
-//! buffer.set_text("Hello, Rust! 🦀\n", &attrs, Shaping::Advanced, None);
+//! buffer.set_text("Hello, Rust! 🦀\n", &attrs, Shaping::Advanced);
 //!
 //! // Perform shaping as desired
 //! buffer.shape_until_scroll(true);
@@ -129,9 +129,6 @@ mod layout;
 pub use self::line_ending::*;
 mod line_ending;
 
-pub use self::render::*;
-mod render;
-
 pub use self::shape::*;
 mod shape;
 
@@ -144,6 +141,9 @@ pub use self::swash::*;
 mod swash;
 
 mod math;
+
+pub use self::perf_lints::*;
+mod perf_lints;
 
 type BuildHasher = core::hash::BuildHasherDefault<rustc_hash::FxHasher>;
 

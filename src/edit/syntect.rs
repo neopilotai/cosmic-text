@@ -9,7 +9,7 @@ use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 
 use crate::{
     Action, AttrsList, BorrowedWithFontSystem, BufferRef, Change, Color, Cursor, Edit, Editor,
-    FontSystem, Renderer, Selection, Shaping, Style, Weight,
+    FontSystem, Selection, Shaping, Style, Weight,
 };
 
 pub use syntect::highlighting::Theme as SyntaxTheme;
@@ -123,32 +123,26 @@ impl<'syntax_system, 'buffer> SyntaxEditor<'syntax_system, 'buffer> {
             ));
         }
 
-        // Clear buffer first (allows sane handling of non-existant files)
+        let text = fs::read_to_string(path)?;
         self.editor.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, "", &attrs, Shaping::Advanced, None);
+            buffer.set_text(font_system, &text, &attrs, Shaping::Advanced);
         });
 
-        // Update syntax based on file name
+        //TODO: re-use text
         self.syntax = match self.syntax_system.syntax_set.find_syntax_for_file(path) {
             Ok(Some(some)) => some,
             Ok(None) => {
-                log::warn!("no syntax found for {path:?}");
+                log::warn!("no syntax found for {:?}", path);
                 self.syntax_system.syntax_set.find_syntax_plain_text()
             }
             Err(err) => {
-                log::warn!("failed to determine syntax for {path:?}: {err:?}");
+                log::warn!("failed to determine syntax for {:?}: {:?}", path, err);
                 self.syntax_system.syntax_set.find_syntax_plain_text()
             }
         };
 
         // Clear syntax cache
         self.syntax_cache.clear();
-
-        // Set text
-        let text = fs::read_to_string(path)?;
-        self.editor.with_buffer_mut(|buffer| {
-            buffer.set_text(font_system, &text, &attrs, Shaping::Advanced, None);
-        });
 
         Ok(())
     }
@@ -162,7 +156,7 @@ impl<'syntax_system, 'buffer> SyntaxEditor<'syntax_system, 'buffer> {
         {
             Some(some) => some,
             None => {
-                log::warn!("no syntax found for {extension:?}");
+                log::warn!("no syntax found for {}", extension);
                 self.syntax_system.syntax_set.find_syntax_plain_text()
             }
         };
@@ -219,31 +213,24 @@ impl<'syntax_system, 'buffer> SyntaxEditor<'syntax_system, 'buffer> {
 
     /// Draw the editor
     #[cfg(feature = "swash")]
-    pub fn draw<F>(&self, font_system: &mut FontSystem, cache: &mut crate::SwashCache, callback: F)
+    pub fn draw<F>(&self, font_system: &mut FontSystem, cache: &mut crate::SwashCache, mut f: F)
     where
         F: FnMut(i32, i32, u32, u32, Color),
     {
-        let mut renderer = crate::LegacyRenderer {
-            font_system,
-            cache,
-            callback,
-        };
-        self.render(&mut renderer);
-    }
-
-    pub fn render<R: Renderer>(&self, renderer: &mut R) {
         let size = self.with_buffer(|buffer| buffer.size());
         if let Some(width) = size.0 {
             if let Some(height) = size.1 {
-                renderer.rectangle(0, 0, width as u32, height as u32, self.background_color());
+                f(0, 0, width as u32, height as u32, self.background_color());
             }
         }
-        self.editor.render(
-            renderer,
+        self.editor.draw(
+            font_system,
+            cache,
             self.foreground_color(),
             self.cursor_color(),
             self.selection_color(),
             self.foreground_color(),
+            f,
         );
     }
 }

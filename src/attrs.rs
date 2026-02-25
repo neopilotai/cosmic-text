@@ -30,37 +30,37 @@ impl Color {
 
     /// Get a tuple over all of the attributes, in `(r, g, b, a)` order.
     #[inline]
-    pub const fn as_rgba_tuple(self) -> (u8, u8, u8, u8) {
+    pub fn as_rgba_tuple(self) -> (u8, u8, u8, u8) {
         (self.r(), self.g(), self.b(), self.a())
     }
 
     /// Get an array over all of the components, in `[r, g, b, a]` order.
     #[inline]
-    pub const fn as_rgba(self) -> [u8; 4] {
+    pub fn as_rgba(self) -> [u8; 4] {
         [self.r(), self.g(), self.b(), self.a()]
     }
 
     /// Get the red component
     #[inline]
-    pub const fn r(&self) -> u8 {
+    pub fn r(&self) -> u8 {
         ((self.0 & 0x00_FF_00_00) >> 16) as u8
     }
 
     /// Get the green component
     #[inline]
-    pub const fn g(&self) -> u8 {
+    pub fn g(&self) -> u8 {
         ((self.0 & 0x00_00_FF_00) >> 8) as u8
     }
 
     /// Get the blue component
     #[inline]
-    pub const fn b(&self) -> u8 {
+    pub fn b(&self) -> u8 {
         (self.0 & 0x00_00_00_FF) as u8
     }
 
     /// Get the alpha component
     #[inline]
-    pub const fn a(&self) -> u8 {
+    pub fn a(&self) -> u8 {
         ((self.0 & 0xFF_00_00_00) >> 24) as u8
     }
 }
@@ -79,23 +79,23 @@ pub enum FamilyOwned {
 impl FamilyOwned {
     pub fn new(family: Family) -> Self {
         match family {
-            Family::Name(name) => Self::Name(SmolStr::from(name)),
-            Family::Serif => Self::Serif,
-            Family::SansSerif => Self::SansSerif,
-            Family::Cursive => Self::Cursive,
-            Family::Fantasy => Self::Fantasy,
-            Family::Monospace => Self::Monospace,
+            Family::Name(name) => FamilyOwned::Name(SmolStr::from(name)),
+            Family::Serif => FamilyOwned::Serif,
+            Family::SansSerif => FamilyOwned::SansSerif,
+            Family::Cursive => FamilyOwned::Cursive,
+            Family::Fantasy => FamilyOwned::Fantasy,
+            Family::Monospace => FamilyOwned::Monospace,
         }
     }
 
-    pub fn as_family(&self) -> Family<'_> {
+    pub fn as_family(&self) -> Family {
         match self {
-            Self::Name(name) => Family::Name(name),
-            Self::Serif => Family::Serif,
-            Self::SansSerif => Family::SansSerif,
-            Self::Cursive => Family::Cursive,
-            Self::Fantasy => Family::Fantasy,
-            Self::Monospace => Family::Monospace,
+            FamilyOwned::Name(name) => Family::Name(name),
+            FamilyOwned::Serif => Family::Serif,
+            FamilyOwned::SansSerif => Family::SansSerif,
+            FamilyOwned::Cursive => Family::Cursive,
+            FamilyOwned::Fantasy => Family::Fantasy,
+            FamilyOwned::Monospace => Family::Monospace,
         }
     }
 }
@@ -153,7 +153,7 @@ impl FeatureTag {
     /// Stylistic Set 2 (font-specific alternate glyphs)
     pub const STYLISTIC_SET_2: Self = Self::new(b"ss02");
 
-    pub const fn as_bytes(&self) -> &[u8; 4] {
+    pub fn as_bytes(&self) -> &[u8; 4] {
         &self.0
     }
 }
@@ -170,7 +170,7 @@ pub struct FontFeatures {
 }
 
 impl FontFeatures {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             features: Vec::new(),
         }
@@ -244,7 +244,7 @@ impl<'a> Attrs<'a> {
     /// Create a new set of attributes with sane defaults
     ///
     /// This defaults to a regular Sans-Serif font.
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             color_opt: None,
             family: Family::SansSerif,
@@ -260,43 +260,43 @@ impl<'a> Attrs<'a> {
     }
 
     /// Set [Color]
-    pub const fn color(mut self, color: Color) -> Self {
+    pub fn color(mut self, color: Color) -> Self {
         self.color_opt = Some(color);
         self
     }
 
     /// Set [Family]
-    pub const fn family(mut self, family: Family<'a>) -> Self {
+    pub fn family(mut self, family: Family<'a>) -> Self {
         self.family = family;
         self
     }
 
     /// Set [Stretch]
-    pub const fn stretch(mut self, stretch: Stretch) -> Self {
+    pub fn stretch(mut self, stretch: Stretch) -> Self {
         self.stretch = stretch;
         self
     }
 
     /// Set [Style]
-    pub const fn style(mut self, style: Style) -> Self {
+    pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
     /// Set [Weight]
-    pub const fn weight(mut self, weight: Weight) -> Self {
+    pub fn weight(mut self, weight: Weight) -> Self {
         self.weight = weight;
         self
     }
 
     /// Set metadata
-    pub const fn metadata(mut self, metadata: usize) -> Self {
+    pub fn metadata(mut self, metadata: usize) -> Self {
         self.metadata = metadata;
         self
     }
 
     /// Set [`CacheKeyFlags`]
-    pub const fn cache_key_flags(mut self, cache_key_flags: CacheKeyFlags) -> Self {
+    pub fn cache_key_flags(mut self, cache_key_flags: CacheKeyFlags) -> Self {
         self.cache_key_flags = cache_key_flags;
         self
     }
@@ -308,7 +308,7 @@ impl<'a> Attrs<'a> {
     }
 
     /// Set letter spacing (tracking) in EM
-    pub const fn letter_spacing(mut self, letter_spacing: f32) -> Self {
+    pub fn letter_spacing(mut self, letter_spacing: f32) -> Self {
         self.letter_spacing_opt = Some(LetterSpacing(letter_spacing));
         self
     }
@@ -317,6 +317,13 @@ impl<'a> Attrs<'a> {
     pub fn font_features(mut self, font_features: FontFeatures) -> Self {
         self.font_features = font_features;
         self
+    }
+
+    /// Check if font matches
+    pub fn matches(&self, face: &fontdb::FaceInfo) -> bool {
+        //TODO: smarter way of including emoji
+        face.post_script_name.contains("Emoji")
+            || (face.style == self.style && face.stretch == self.stretch)
     }
 
     /// Check if this set of attributes can be shaped with another
@@ -381,7 +388,7 @@ impl AttrsOwned {
         }
     }
 
-    pub fn as_attrs(&self) -> Attrs<'_> {
+    pub fn as_attrs(&self) -> Attrs {
         Attrs {
             color_opt: self.color_opt,
             family: self.family_owned.as_family(),
@@ -415,7 +422,7 @@ impl AttrsList {
     }
 
     /// Get the default [Attrs]
-    pub fn defaults(&self) -> Attrs<'_> {
+    pub fn defaults(&self) -> Attrs {
         self.defaults.as_attrs()
     }
 
@@ -447,7 +454,7 @@ impl AttrsList {
     /// Get the attribute span for an index
     ///
     /// This returns a span that contains the index
-    pub fn get_span(&self, index: usize) -> Attrs<'_> {
+    pub fn get_span(&self, index: usize) -> Attrs {
         self.spans
             .get(&index)
             .map(|v| v.as_attrs())
@@ -464,9 +471,7 @@ impl AttrsList {
         for span in self.spans.iter() {
             if span.0.end <= index {
                 continue;
-            }
-
-            if span.0.start >= index {
+            } else if span.0.start >= index {
                 removes.push((span.0.clone(), false));
             } else {
                 removes.push((span.0.clone(), true));

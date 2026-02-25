@@ -24,7 +24,6 @@ fn set_buffer_text(buffer: &mut BorrowedWithFontSystem<'_, Buffer>) {
     let serif_attrs = attrs.clone().family(Family::Serif);
     let mono_attrs = attrs.clone().family(Family::Monospace);
     let comic_attrs = attrs.clone().family(Family::Name("Comic Neue"));
-    let inter_attrs = attrs.clone().family(Family::Name("Inter Variable"));
 
     let spans: &[(&str, Attrs)] = &[
         (
@@ -32,7 +31,7 @@ fn set_buffer_text(buffer: &mut BorrowedWithFontSystem<'_, Buffer>) {
             attrs.clone().metrics(Metrics::relative(64.0, 1.2)),
         ),
         (
-            "\n\nFont size 8 \n\n",
+            "Font size 8 ",
             attrs.clone().metrics(Metrics::relative(8.0, 1.2)),
         ),
         (
@@ -95,7 +94,6 @@ fn set_buffer_text(buffer: &mut BorrowedWithFontSystem<'_, Buffer>) {
                 .weight(Weight::BOLD)
                 .style(Style::Italic),
         ),
-        ("🌈", attrs.clone()),
         ("R", attrs.clone().color(Color::rgb(0xFF, 0x00, 0x00))),
         ("A", attrs.clone().color(Color::rgb(0xFF, 0x7F, 0x00))),
         ("I", attrs.clone().color(Color::rgb(0xFF, 0xFF, 0x00))),
@@ -116,33 +114,10 @@ fn set_buffer_text(buffer: &mut BorrowedWithFontSystem<'_, Buffer>) {
         ("C", attrs.clone().color(Color::rgb(0x00, 0xFF, 0x00))),
         ("O", attrs.clone().color(Color::rgb(0xFF, 0xFF, 0x00))),
         ("R", attrs.clone().color(Color::rgb(0xFF, 0x7F, 0x00))),
-        ("N", attrs.clone().color(Color::rgb(0xFF, 0x00, 0x00))),
-        ("🦄\n", attrs.clone()),
+        ("N\n", attrs.clone().color(Color::rgb(0xFF, 0x00, 0x00))),
         (
-            "生活,삶,जिंदगी 😀\n",
+            "生活,삶,जिंदगी 😀 FPS\n",
             attrs.clone().color(Color::rgb(0xFF, 0x00, 0x00)),
-        ),
-        ("Hinting enabled, ", attrs.clone()),
-        (
-            "Hinting disabled\n",
-            attrs
-                .clone()
-                .cache_key_flags(CacheKeyFlags::DISABLE_HINTING),
-        ),
-        (
-            "Inter Variable: 400 ",
-            inter_attrs.clone().weight(Weight(400)),
-        ),
-        ("200 ", inter_attrs.clone().weight(Weight(200))),
-        ("250 ", inter_attrs.clone().weight(Weight(250))),
-        ("300\n", inter_attrs.clone().weight(Weight(300))),
-        (
-            "Inter Variable Italic: 400 ",
-            inter_attrs.clone().weight(Weight(400)).style(Style::Italic),
-        ),
-        (
-            "800",
-            inter_attrs.clone().weight(Weight(800)).style(Style::Italic),
         ),
     ];
 
@@ -162,12 +137,6 @@ fn main() {
     let context = softbuffer::Context::new(window.clone()).unwrap();
     let mut surface = softbuffer::Surface::new(&context, window.clone()).unwrap();
     let mut font_system = FontSystem::new();
-    let inter_variable = include_bytes!("../../../fonts/InterVariable.ttf");
-    font_system.db_mut().load_font_data(inter_variable.to_vec());
-    let inter_variable_italic = include_bytes!("../../../fonts/InterVariable-Italic.ttf");
-    font_system
-        .db_mut()
-        .load_font_data(inter_variable_italic.to_vec());
     let mut swash_cache = SwashCache::new();
 
     let mut display_scale = window.scale_factor() as f32;
@@ -186,6 +155,7 @@ fn main() {
     let mut mouse_x = 0.0;
     let mut mouse_y = 0.0;
     let mut mouse_left = ElementState::Released;
+    let mut unapplied_scroll_delta = 0.0;
 
     let bg_color = tiny_skia::Color::from_rgba8(0x34, 0x34, 0x34, 0xFF);
     let font_color = Color::rgb(0xFF, 0xFF, 0xFF);
@@ -339,9 +309,9 @@ fn main() {
 
                         // Scroll if cursor is near edge of window while dragging
                         if mouse_y <= 5.0 {
-                            editor.action(Action::Scroll { pixels: -20.0 });
+                            editor.action(Action::Scroll { lines: -1 });
                         } else if mouse_y - 5.0 >= window.inner_size().height as f64 {
-                            editor.action(Action::Scroll { pixels: 20.0 });
+                            editor.action(Action::Scroll { lines: 1 });
                         }
 
                         window.request_redraw();
@@ -368,14 +338,17 @@ fn main() {
                     delta,
                     phase: _,
                 } => {
-                    let pixel_delta = match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => y * 20.0,
-                        MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => y as f32,
+                    let line_delta = match delta {
+                        MouseScrollDelta::LineDelta(_x, y) => y as i32,
+                        MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => {
+                            unapplied_scroll_delta += y;
+                            let line_delta = (unapplied_scroll_delta / 20.0).floor();
+                            unapplied_scroll_delta -= line_delta * 20.0;
+                            line_delta as i32
+                        }
                     };
-                    if pixel_delta != 0.0 {
-                        editor.action(Action::Scroll {
-                            pixels: -pixel_delta,
-                        });
+                    if line_delta != 0 {
+                        editor.action(Action::Scroll { lines: -line_delta });
                     }
                     window.request_redraw();
                 }
