@@ -358,23 +358,22 @@ impl PerformanceLinter {
                 }
             }
 
-            if self.is_enabled(lint_codes::IO_IN_RENDER) {
-                if (line.contains("println!")
+            if self.is_enabled(lint_codes::IO_IN_RENDER)
+                && (line.contains("println!")
                     || line.contains("eprintln!")
                     || line.contains("write!"))
-                    && (line.contains("render")
-                        || line.contains("draw")
-                        || line.contains("update")
-                        || line.contains("paint"))
-                {
-                    issues.push(LintIssue {
-                        code: lint_codes::IO_IN_RENDER,
-                        message: "I/O operation in render path".to_string(),
-                        line: line_num + 1,
-                        column: 1,
-                        suggestion: Some("Gate with cfg(debug_assertions)".to_string()),
-                    });
-                }
+                && (line.contains("render")
+                    || line.contains("draw")
+                    || line.contains("update")
+                    || line.contains("paint"))
+            {
+                issues.push(LintIssue {
+                    code: lint_codes::IO_IN_RENDER,
+                    message: "I/O operation in render path".to_string(),
+                    line: line_num + 1,
+                    column: 1,
+                    suggestion: Some("Gate with cfg(debug_assertions)".to_string()),
+                });
             }
         }
 
