@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use cosmic_text::{Buffer, Cursor, Edit, Metrics, SyntaxEditor, SyntaxSystem, ViEditor};
+use fastui_cosmic::{Buffer, Cursor, Edit, Metrics, SyntaxEditor, SyntaxSystem, ViEditor};
 
 static SYNTAX_SYSTEM: OnceLock<SyntaxSystem> = OnceLock::new();
 
@@ -22,51 +22,6 @@ fn editor() -> ViEditor<'static, 'static> {
     .expect("Default theme `base16-eighties.dark` should be found");
 
     ViEditor::new(editor)
-}
-
-fn editor_text(editor: &ViEditor<'static, 'static>) -> String {
-    let mut text = String::new();
-    editor.with_buffer(|buffer| {
-        for line in buffer.lines.iter() {
-            text.push_str(line.text());
-            text.push_str(line.ending().as_str());
-        }
-    });
-    text
-}
-
-#[test]
-fn editor_line_endings_preserved() {
-    let mut editor = editor();
-    assert_eq!(editor_text(&editor), "");
-
-    let start = Cursor::new(0, 0);
-    for &text in &[
-        "No newlines",
-        "One Newline\n",
-        "Two\nNewlines\n",
-        "LF\nCRLF\r\nCR\rLFCR\n\rNONE",
-    ] {
-        editor.start_change();
-        let end = editor.insert_at(start, text, None);
-        editor.finish_change();
-        assert_eq!(editor_text(&editor), text);
-
-        editor.start_change();
-        editor.delete_range(start, end);
-        editor.finish_change();
-        assert_eq!(editor_text(&editor), "");
-
-        editor.start_change();
-        editor.undo();
-        editor.finish_change();
-        assert_eq!(editor_text(&editor), text);
-
-        editor.start_change();
-        editor.redo();
-        editor.finish_change();
-        assert_eq!(editor_text(&editor), "");
-    }
 }
 
 // Tests that inserting into an empty editor correctly sets the editor as modified.

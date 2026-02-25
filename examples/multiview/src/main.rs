@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use cosmic_text::{
-    Action, Attrs, Buffer, Edit, Family, FontSystem, Metrics, Scroll, Shaping, SwashCache,
+use fastui_cosmic::{
+    Attrs, Buffer, Edit, Family, FontSystem, Metrics, Scroll, Shaping, SwashCache,
 };
 use std::{collections::HashMap, env, fs, num::NonZeroU32, rc::Rc, slice};
 use tiny_skia::{Color, Paint, PixmapMut, Rect, Transform};
@@ -31,7 +31,7 @@ fn main() {
 
     let attrs = Attrs::new().family(Family::Monospace);
     match fs::read_to_string(&path) {
-        Ok(text) => buffer.set_text(&text, &attrs, Shaping::Advanced, None),
+        Ok(text) => buffer.set_text(&text, &attrs, Shaping::Advanced),
         Err(err) => {
             log::error!("failed to load {:?}: {}", path, err);
         }
@@ -114,7 +114,7 @@ fn main() {
                         let transform = Transform::identity();
                         buffer.draw(
                             &mut swash_cache,
-                            cosmic_text::Color::rgb(0xFF, 0xFF, 0xFF),
+                            fastui_cosmic::Color::rgb(0xFF, 0xFF, 0xFF),
                             |x, y, w, h, color| {
                                 paint.set_color_rgba8(color.r(), color.g(), color.b(), color.a());
                                 pixmap.fill_rect(

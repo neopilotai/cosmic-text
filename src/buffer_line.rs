@@ -1,12 +1,9 @@
-#![allow(clippy::too_many_arguments)]
-
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
 use core::mem;
 
 use crate::{
-    Align, Attrs, AttrsList, Cached, Ellipsize, FontSystem, Hinting, LayoutLine, LineEnding,
-    ShapeLine, Shaping, Wrap,
+    Align, Attrs, AttrsList, Cached, FontSystem, LayoutLine, LineEnding, ShapeLine, Shaping, Wrap,
 };
 
 /// A line (or paragraph) of text that is shaped and laid out
@@ -98,7 +95,7 @@ impl BufferLine {
     }
 
     /// Get line ending
-    pub const fn ending(&self) -> LineEnding {
+    pub fn ending(&self) -> LineEnding {
         self.ending
     }
 
@@ -117,7 +114,7 @@ impl BufferLine {
     }
 
     /// Get attributes list
-    pub const fn attrs_list(&self) -> &AttrsList {
+    pub fn attrs_list(&self) -> &AttrsList {
         &self.attrs_list
     }
 
@@ -136,7 +133,7 @@ impl BufferLine {
     }
 
     /// Get the Text alignment
-    pub const fn align(&self) -> Option<Align> {
+    pub fn align(&self) -> Option<Align> {
         self.align
     }
 
@@ -158,12 +155,9 @@ impl BufferLine {
     /// Append line at end of this line
     ///
     /// The wrap setting of the appended line will be lost
-    pub fn append(&mut self, other: &Self) {
+    pub fn append(&mut self, other: Self) {
         let len = self.text.len();
         self.text.push_str(other.text());
-
-        // To preserve line endings, we use the one from the other line
-        self.ending = other.ending();
 
         if other.attrs_list.defaults() != self.attrs_list.defaults() {
             // If default formatting does not match, make a new span for it
@@ -187,8 +181,6 @@ impl BufferLine {
         self.reset();
 
         let mut new = Self::new(text, self.ending, attrs_list, self.shaping);
-        // To preserve line endings, it moves to the new line
-        self.ending = LineEnding::None;
         new.align = self.align;
         new
     }
@@ -232,7 +224,7 @@ impl BufferLine {
     }
 
     /// Get line shaping cache
-    pub const fn shape_opt(&self) -> Option<&ShapeLine> {
+    pub fn shape_opt(&self) -> Option<&ShapeLine> {
         self.shape_opt.get()
     }
 
@@ -243,11 +235,10 @@ impl BufferLine {
         font_system: &mut FontSystem,
         font_size: f32,
         width_opt: Option<f32>,
+        first_line_indent: Option<f32>,
         wrap: Wrap,
-        ellipsize: Ellipsize,
         match_mono_width: Option<f32>,
         tab_width: u16,
-        hinting: Hinting,
     ) -> &[LayoutLine] {
         if self.layout_opt.is_unused() {
             let align = self.align;
@@ -261,11 +252,10 @@ impl BufferLine {
                 font_size,
                 width_opt,
                 wrap,
-                ellipsize,
                 align,
+                first_line_indent,
                 &mut layout,
                 match_mono_width,
-                hinting,
             );
             self.layout_opt.set_used(layout);
         }
@@ -273,13 +263,13 @@ impl BufferLine {
     }
 
     /// Get line layout cache
-    pub const fn layout_opt(&self) -> Option<&Vec<LayoutLine>> {
+    pub fn layout_opt(&self) -> Option<&Vec<LayoutLine>> {
         self.layout_opt.get()
     }
 
     /// Get line metadata. This will be None if [`BufferLine::set_metadata`] has not been called
     /// after the last reset of shaping and layout caches
-    pub const fn metadata(&self) -> Option<usize> {
+    pub fn metadata(&self) -> Option<usize> {
         self.metadata
     }
 
@@ -294,7 +284,7 @@ impl BufferLine {
     pub(crate) fn empty() -> Self {
         Self {
             text: String::default(),
-            ending: LineEnding::None,
+            ending: LineEnding::default(),
             attrs_list: AttrsList::new(&Attrs::new()),
             align: None,
             shape_opt: Cached::Empty,

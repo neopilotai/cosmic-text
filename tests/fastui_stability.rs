@@ -8,7 +8,7 @@ use fastui_cosmic::{
 // Being able to get the same wrapping when feeding the measured width back into ShapeLine::layout
 // as the new width limit is very useful for certain UI layout use cases.
 #[test]
-fn stable_wrap() {
+fn fastui_stability() {
     let font_size = 18.0;
     let attrs = AttrsList::new(
         &Attrs::new()
@@ -109,7 +109,7 @@ fn stable_wrap() {
 }
 
 #[test]
-fn wrap_extra_line() {
+fn fastui_wrap_extra_line() {
     let mut font_system = FontSystem::new();
     let metrics = Metrics::new(14.0, 20.0);
 

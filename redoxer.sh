@@ -10,7 +10,7 @@ redoxer install \
     --path examples/editor-orbclient \
     --root "target/redoxer"
 
-args=(env RUST_LOG=cosmic_text=debug,editor_orbclient=debug /root/bin/editor-orbclient)
+args=(env RUST_LOG=fastui_cosmic=debug,editor_orbclient=debug /root/bin/editor-orbclient)
 if [ -f "$1" ]
 then
     filename="$(basename "$1")"

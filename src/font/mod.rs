@@ -1,42 +1,32 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use harfrust::Shaper;
-use linebender_resource_handle::{Blob, FontData};
-use skrifa::raw::{ReadError, TableProvider as _};
-use skrifa::{metrics::Metrics, prelude::*};
-// re-export skrifa
-pub use skrifa;
+// re-export ttf_parser
+pub use ttf_parser;
 // re-export peniko::Font;
 #[cfg(feature = "peniko")]
-pub use linebender_resource_handle::FontData as PenikoFont;
+pub use peniko::Font as PenikoFont;
 
 use core::fmt;
 
 use alloc::sync::Arc;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-use fontdb::Style;
+
+use rustybuzz::Face as RustybuzzFace;
 use self_cell::self_cell;
 
-pub mod fallback;
+pub(crate) mod fallback;
 pub use fallback::{Fallback, PlatformFallback};
 
 pub use self::system::*;
 mod system;
 
-struct OwnedFaceData {
-    data: Arc<dyn AsRef<[u8]> + Send + Sync>,
-    shaper_data: harfrust::ShaperData,
-    shaper_instance: harfrust::ShaperInstance,
-    metrics: Metrics,
-}
-
 self_cell!(
     struct OwnedFace {
-        owner: OwnedFaceData,
+        owner: Arc<dyn AsRef<[u8]> + Send + Sync>,
 
         #[covariant]
-        dependent: Shaper,
+        dependent: RustybuzzFace,
     }
 );
 
@@ -50,11 +40,13 @@ struct FontMonospaceFallback {
 pub struct Font {
     #[cfg(feature = "swash")]
     swash: (u32, swash::CacheKey),
-    harfrust: OwnedFace,
-    data: FontData,
+    rustybuzz: OwnedFace,
+    #[cfg(not(feature = "peniko"))]
+    data: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    #[cfg(feature = "peniko")]
+    data: peniko::Font,
     id: fontdb::ID,
     monospace_fallback: Option<FontMonospaceFallback>,
-    pub(crate) italic_or_oblique: bool,
 }
 
 impl fmt::Debug for Font {
@@ -66,7 +58,7 @@ impl fmt::Debug for Font {
 }
 
 impl Font {
-    pub const fn id(&self) -> fontdb::ID {
+    pub fn id(&self) -> fontdb::ID {
         self.id
     }
 
@@ -87,19 +79,18 @@ impl Font {
     }
 
     pub fn data(&self) -> &[u8] {
-        self.data.data.data()
+        #[cfg(not(feature = "peniko"))]
+        {
+            (*self.data).as_ref()
+        }
+        #[cfg(feature = "peniko")]
+        {
+            self.data.data.data()
+        }
     }
 
-    pub fn shaper(&self) -> &harfrust::Shaper<'_> {
-        self.harfrust.borrow_dependent()
-    }
-
-    pub(crate) fn shaper_instance(&self) -> &harfrust::ShaperInstance {
-        &self.harfrust.borrow_owner().shaper_instance
-    }
-
-    pub fn metrics(&self) -> &Metrics {
-        &self.harfrust.borrow_owner().metrics
+    pub fn rustybuzz(&self) -> &RustybuzzFace<'_> {
+        self.rustybuzz.borrow_dependent()
     }
 
     #[cfg(feature = "peniko")]
@@ -119,8 +110,61 @@ impl Font {
 }
 
 impl Font {
-    pub fn new(db: &fontdb::Database, id: fontdb::ID, weight: fontdb::Weight) -> Option<Self> {
+    pub fn new(db: &fontdb::Database, id: fontdb::ID) -> Option<Self> {
         let info = db.face(id)?;
+
+        let monospace_fallback = if cfg!(feature = "monospace_fallback") {
+            db.with_face_data(id, |font_data, face_index| {
+                let face = ttf_parser::Face::parse(font_data, face_index).ok()?;
+                let monospace_em_width = info
+                    .monospaced
+                    .then(|| {
+                        let hor_advance = face.glyph_hor_advance(face.glyph_index(' ')?)? as f32;
+                        let upem = face.units_per_em() as f32;
+                        Some(hor_advance / upem)
+                    })
+                    .flatten();
+
+                if info.monospaced && monospace_em_width.is_none() {
+                    None?;
+                }
+
+                let scripts = face
+                    .tables()
+                    .gpos
+                    .into_iter()
+                    .chain(face.tables().gsub)
+                    .flat_map(|table| table.scripts)
+                    .map(|script| script.tag.to_bytes())
+                    .collect();
+
+                let mut unicode_codepoints = Vec::new();
+
+                face.tables()
+                    .cmap?
+                    .subtables
+                    .into_iter()
+                    .filter(|subtable| subtable.is_unicode())
+                    .for_each(|subtable| {
+                        unicode_codepoints.reserve(1024);
+                        subtable.codepoints(|code_point| {
+                            if subtable.glyph_index(code_point).is_some() {
+                                unicode_codepoints.push(code_point);
+                            }
+                        });
+                    });
+
+                unicode_codepoints.shrink_to_fit();
+
+                Some(FontMonospaceFallback {
+                    monospace_em_width,
+                    scripts,
+                    unicode_codepoints,
+                })
+            })?
+        } else {
+            None
+        };
 
         let data = match &info.source {
             fontdb::Source::Binary(data) => Arc::clone(data),
@@ -133,77 +177,6 @@ impl Font {
             fontdb::Source::SharedFile(_path, data) => Arc::clone(data),
         };
 
-        // It's a bit unfortunate but we need to parse the data into a `FontRef`
-        // twice--once to construct the HarfRust `ShaperInstance` and
-        // `ShaperData`, and once to create the persistent `FontRef` tied to the
-        // lifetime of the face data.
-        let font_ref = FontRef::from_index((*data).as_ref(), info.index).ok()?;
-        let location = font_ref
-            .axes()
-            .location([(Tag::new(b"wght"), weight.0 as f32)]);
-        let metrics = font_ref.metrics(Size::unscaled(), &location);
-
-        let monospace_fallback = if cfg!(feature = "monospace_fallback") {
-            (|| {
-                let glyph_metrics = font_ref.glyph_metrics(Size::unscaled(), &location);
-                let charmap = font_ref.charmap();
-                let monospace_em_width = info
-                    .monospaced
-                    .then(|| {
-                        let hor_advance = glyph_metrics.advance_width(charmap.map(' ')?)?;
-                        let upem = metrics.units_per_em;
-                        Some(hor_advance / f32::from(upem))
-                    })
-                    .flatten();
-
-                if info.monospaced && monospace_em_width.is_none() {
-                    None?;
-                }
-
-                let scripts = font_ref
-                    .gpos()
-                    .ok()?
-                    .script_list()
-                    .ok()?
-                    .script_records()
-                    .iter()
-                    .chain(
-                        font_ref
-                            .gsub()
-                            .ok()?
-                            .script_list()
-                            .ok()?
-                            .script_records()
-                            .iter(),
-                    )
-                    .map(|script| script.script_tag().into_bytes())
-                    .collect();
-
-                let mut unicode_codepoints = Vec::new();
-
-                for (code_point, _) in charmap.mappings() {
-                    unicode_codepoints.push(code_point);
-                }
-
-                unicode_codepoints.shrink_to_fit();
-
-                Some(FontMonospaceFallback {
-                    monospace_em_width,
-                    scripts,
-                    unicode_codepoints,
-                })
-            })()
-        } else {
-            None
-        };
-
-        let (shaper_instance, shaper_data) = {
-            (
-                harfrust::ShaperInstance::from_coords(&font_ref, location.coords().iter().copied()),
-                harfrust::ShaperData::new(&font_ref),
-            )
-        };
-
         Some(Self {
             id: info.id,
             monospace_fallback,
@@ -212,30 +185,14 @@ impl Font {
                 let swash = swash::FontRef::from_index((*data).as_ref(), info.index as usize)?;
                 (swash.offset, swash.key)
             },
-            harfrust: OwnedFace::try_new(
-                OwnedFaceData {
-                    data: Arc::clone(&data),
-                    shaper_data,
-                    shaper_instance,
-                    metrics,
-                },
-                |OwnedFaceData {
-                     data,
-                     shaper_data,
-                     shaper_instance,
-                     ..
-                 }| {
-                    let font_ref = FontRef::from_index((**data).as_ref(), info.index)?;
-                    let shaper = shaper_data
-                        .shaper(&font_ref)
-                        .instance(Some(shaper_instance))
-                        .build();
-                    Ok::<_, ReadError>(shaper)
-                },
-            )
+            rustybuzz: OwnedFace::try_new(Arc::clone(&data), |data| {
+                RustybuzzFace::from_slice((**data).as_ref(), info.index).ok_or(())
+            })
             .ok()?,
-            data: FontData::new(Blob::new(data), info.index),
-            italic_or_oblique: info.style == Style::Italic || info.style == Style::Oblique,
+            #[cfg(not(feature = "peniko"))]
+            data,
+            #[cfg(feature = "peniko")]
+            data: peniko::Font::new(peniko::Blob::new(data), info.index),
         })
     }
 }

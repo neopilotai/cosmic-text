@@ -5,13 +5,14 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::cmp;
-
+use core::{cmp, iter::once};
 use unicode_segmentation::UnicodeSegmentation;
 
+#[cfg(feature = "swash")]
+use crate::Color;
 use crate::{
     Action, Attrs, AttrsList, BorrowedWithFontSystem, BufferLine, BufferRef, Change, ChangeItem,
-    Color, Cursor, Edit, FontSystem, LayoutRun, LineEnding, LineIter, Renderer, Selection, Shaping,
+    Cursor, Edit, FontSystem, LayoutRun, Selection, Shaping,
 };
 
 /// A wrapper of [`Buffer`] for easy editing
@@ -64,24 +65,30 @@ fn cursor_glyph_opt(cursor: &Cursor, run: &LayoutRun) -> Option<(usize, f32)> {
 
 fn cursor_position(cursor: &Cursor, run: &LayoutRun) -> Option<(i32, i32)> {
     let (cursor_glyph, cursor_glyph_offset) = cursor_glyph_opt(cursor, run)?;
-    let x = run.glyphs.get(cursor_glyph).map_or_else(
-        || {
-            run.glyphs.last().map_or(0, |glyph| {
-                if glyph.level.is_rtl() {
-                    glyph.x as i32
-                } else {
-                    (glyph.x + glyph.w) as i32
-                }
-            })
-        },
-        |glyph| {
+    let x = match run.glyphs.get(cursor_glyph) {
+        Some(glyph) => {
+            // Start of detected glyph
             if glyph.level.is_rtl() {
                 (glyph.x + glyph.w - cursor_glyph_offset) as i32
             } else {
                 (glyph.x + cursor_glyph_offset) as i32
             }
+        }
+        None => match run.glyphs.last() {
+            Some(glyph) => {
+                // End of last glyph
+                if glyph.level.is_rtl() {
+                    glyph.x as i32
+                } else {
+                    (glyph.x + glyph.w) as i32
+                }
+            }
+            None => {
+                // Start of empty line
+                0
+            }
         },
-    );
+    };
 
     Some((x, run.line_top as i32))
 }
@@ -111,32 +118,10 @@ impl<'buffer> Editor<'buffer> {
         cursor_color: Color,
         selection_color: Color,
         selected_text_color: Color,
-        callback: F,
+        mut f: F,
     ) where
         F: FnMut(i32, i32, u32, u32, Color),
     {
-        let mut renderer = crate::LegacyRenderer {
-            font_system,
-            cache,
-            callback,
-        };
-        self.render(
-            &mut renderer,
-            text_color,
-            cursor_color,
-            selection_color,
-            selected_text_color,
-        );
-    }
-
-    pub fn render<R: Renderer>(
-        &self,
-        renderer: &mut R,
-        text_color: Color,
-        cursor_color: Color,
-        selection_color: Color,
-        selected_text_color: Color,
-    ) {
         let selection_bounds = self.selection_bounds();
         self.with_buffer(|buffer| {
             for run in buffer.layout_runs() {
@@ -149,7 +134,7 @@ impl<'buffer> Editor<'buffer> {
                 if let Some((start, end)) = selection_bounds {
                     if line_i >= start.line && line_i <= end.line {
                         let mut range_opt = None;
-                        for glyph in run.glyphs {
+                        for glyph in run.glyphs.iter() {
                             // Guess x offset based on characters
                             let cluster = &run.text[glyph.start..glyph.end];
                             let total = cluster.grapheme_indices(true).count();
@@ -169,7 +154,7 @@ impl<'buffer> Editor<'buffer> {
                                         None => Some((c_x as i32, (c_x + c_w) as i32)),
                                     };
                                 } else if let Some((min, max)) = range_opt.take() {
-                                    renderer.rectangle(
+                                    f(
                                         min,
                                         line_top as i32,
                                         cmp::max(0, max - min) as u32,
@@ -195,7 +180,7 @@ impl<'buffer> Editor<'buffer> {
                                     max = buffer.size().0.unwrap_or(0.0) as i32;
                                 }
                             }
-                            renderer.rectangle(
+                            f(
                                 min,
                                 line_top as i32,
                                 cmp::max(0, max - min) as u32,
@@ -208,13 +193,16 @@ impl<'buffer> Editor<'buffer> {
 
                 // Draw cursor
                 if let Some((x, y)) = cursor_position(&self.cursor, &run) {
-                    renderer.rectangle(x, y, 1, line_height as u32, cursor_color);
+                    f(x, y, 1, line_height as u32, cursor_color);
                 }
 
-                for glyph in run.glyphs {
-                    let physical_glyph = glyph.physical((0., line_y), 1.0);
+                for glyph in run.glyphs.iter() {
+                    let physical_glyph = glyph.physical((0., 0.), 1.0);
 
-                    let mut glyph_color = glyph.color_opt.map_or(text_color, |some| some);
+                    let mut glyph_color = match glyph.color_opt {
+                        Some(some) => some,
+                        None => text_color,
+                    };
                     if text_color != selected_text_color {
                         if let Some((start, end)) = selection_bounds {
                             if line_i >= start.line
@@ -227,7 +215,20 @@ impl<'buffer> Editor<'buffer> {
                         }
                     }
 
-                    renderer.glyph(physical_glyph, glyph_color);
+                    cache.with_pixels(
+                        font_system,
+                        physical_glyph.cache_key,
+                        glyph_color,
+                        |x, y, color| {
+                            f(
+                                physical_glyph.x + x,
+                                line_y as i32 + physical_glyph.y + y,
+                                1,
+                                1,
+                                color,
+                            );
+                        },
+                    );
                 }
             }
         });
@@ -275,7 +276,7 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
     }
 
     fn tab_width(&self) -> u16 {
-        self.with_buffer(super::super::buffer::Buffer::tab_width)
+        self.with_buffer(|buffer| buffer.tab_width())
     }
 
     fn set_tab_width(&mut self, font_system: &mut FontSystem, tab_width: u16) {
@@ -304,7 +305,7 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
 
                 // Remove end line
                 let removed = buffer.lines.remove(end.line);
-                change_lines.insert(0, removed);
+                change_lines.insert(0, removed.text().to_string());
 
                 Some(after)
             } else {
@@ -314,53 +315,37 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
             // Delete interior lines (in reverse for safety)
             for line_i in (start.line + 1..end.line).rev() {
                 let removed = buffer.lines.remove(line_i);
-                change_lines.insert(0, removed);
+                change_lines.insert(0, removed.text().to_string());
             }
 
             // Delete the selection from the first line
             {
-                let line = &mut buffer.lines[start.line];
-
                 // Get part after selection if start line is also end line
                 let after_opt = if start.line == end.line {
-                    Some(line.split_off(end.index))
+                    Some(buffer.lines[start.line].split_off(end.index))
                 } else {
                     None
                 };
 
                 // Delete selected part of line
-                let removed = line.split_off(start.index);
-                change_lines.insert(0, removed);
+                let removed = buffer.lines[start.line].split_off(start.index);
+                change_lines.insert(0, removed.text().to_string());
 
                 // Re-add part of line after selection
                 if let Some(after) = after_opt {
-                    line.append(&after);
+                    buffer.lines[start.line].append(after);
                 }
 
                 // Re-add valid parts of end line
-                if let Some(mut end_line) = end_line_opt {
-                    // Preserve line ending of original line
-                    if end_line.ending() == LineEnding::None {
-                        end_line.set_ending(line.ending());
-                    }
-                    line.append(&end_line);
+                if let Some(end_line) = end_line_opt {
+                    buffer.lines[start.line].append(end_line);
                 }
-            }
-
-            let mut text = String::new();
-            let mut last_ending: Option<LineEnding> = None;
-            for line in change_lines {
-                if let Some(ending) = last_ending {
-                    text.push_str(ending.as_str());
-                }
-                text.push_str(line.text());
-                last_ending = Some(line.ending());
             }
 
             ChangeItem {
                 start,
                 end,
-                text,
+                text: change_lines.join("\n"),
                 insert: false,
             }
         });
@@ -387,24 +372,20 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
 
             // Ensure there are enough lines in the buffer to handle this cursor
             while cursor.line >= buffer.lines.len() {
-                // Get last line ending
-                let mut last_ending = LineEnding::None;
-                if let Some(last_line) = buffer.lines.last_mut() {
-                    last_ending = last_line.ending();
-                    // Ensure a valid line ending is always set on interior lines
-                    if last_ending == LineEnding::None {
-                        last_line.set_ending(LineEnding::default());
-                    }
-                }
+                let ending = buffer
+                    .lines
+                    .last()
+                    .map(|line| line.ending())
+                    .unwrap_or_default();
                 let line = BufferLine::new(
                     String::new(),
-                    last_ending,
+                    ending,
                     AttrsList::new(&attrs_list.as_ref().map_or_else(
                         || {
                             buffer
                                 .lines
                                 .last()
-                                .map_or_else(Attrs::new, |line| line.attrs_list().defaults())
+                                .map_or(Attrs::new(), |line| line.attrs_list().defaults())
                         },
                         |x| x.defaults(),
                     )),
@@ -415,6 +396,7 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
 
             let line: &mut BufferLine = &mut buffer.lines[cursor.line];
             let insert_line = cursor.line + 1;
+            let ending = line.ending();
 
             // Collect text after insertion as a line
             let after: BufferLine = line.split_off(cursor.index);
@@ -426,48 +408,47 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
             });
 
             // Append the inserted text, line by line
-            let mut lines: Vec<_> = LineIter::new(data).collect();
-            // Ensure there is always an ending line with no line ending
-            if lines.last().map(|line| line.1).unwrap_or(LineEnding::None) != LineEnding::None {
-                lines.push((Default::default(), LineEnding::None));
-            }
-            let mut lines_iter = lines.into_iter();
-
-            // Add first line
-            if let Some((range, ending)) = lines_iter.next() {
-                let data_line = &data[range];
+            // we want to see a blank entry if the string ends with a newline
+            //TODO: adjust this to get line ending from data?
+            let addendum = once("").filter(|_| data.ends_with('\n'));
+            let mut lines_iter = data.split_inclusive('\n').chain(addendum);
+            if let Some(data_line) = lines_iter.next() {
                 let mut these_attrs = final_attrs.split_off(data_line.len());
-                remaining_split_len -= data_line.len() + ending.as_str().len();
+                remaining_split_len -= data_line.len();
                 core::mem::swap(&mut these_attrs, &mut final_attrs);
-                line.append(&BufferLine::new(
-                    data_line,
+                line.append(BufferLine::new(
+                    data_line
+                        .strip_suffix(char::is_control)
+                        .unwrap_or(data_line),
                     ending,
                     these_attrs,
                     Shaping::Advanced,
                 ));
+            } else {
+                panic!("str::lines() did not yield any elements");
             }
-            // Add last line
-            if let Some((range, ending)) = lines_iter.next_back() {
-                let data_line = &data[range];
-                remaining_split_len -= data_line.len() + ending.as_str().len();
+            if let Some(data_line) = lines_iter.next_back() {
+                remaining_split_len -= data_line.len();
                 let mut tmp = BufferLine::new(
-                    data_line,
+                    data_line
+                        .strip_suffix(char::is_control)
+                        .unwrap_or(data_line),
                     ending,
                     final_attrs.split_off(remaining_split_len),
                     Shaping::Advanced,
                 );
-                tmp.append(&after);
+                tmp.append(after);
                 buffer.lines.insert(insert_line, tmp);
                 cursor.line += 1;
             } else {
-                line.append(&after);
+                line.append(after);
             }
-            // Add middle lines
-            for (range, ending) in lines_iter.rev() {
-                let data_line = &data[range];
-                remaining_split_len -= data_line.len() + ending.as_str().len();
+            for data_line in lines_iter.rev() {
+                remaining_split_len -= data_line.len();
                 let tmp = BufferLine::new(
-                    data_line,
+                    data_line
+                        .strip_suffix(char::is_control)
+                        .unwrap_or(data_line),
                     ending,
                     final_attrs.split_off(remaining_split_len),
                     Shaping::Advanced,
@@ -528,8 +509,9 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
     }
 
     fn delete_selection(&mut self) -> bool {
-        let Some((start, end)) = self.selection_bounds() else {
-            return false;
+        let (start, end) = match self.selection_bounds() {
+            Some(some) => some,
+            None => return false,
         };
 
         // Reset cursor to start of selection
@@ -555,7 +537,7 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
             }
         }
 
-        for item in &change.items {
+        for item in change.items.iter() {
             //TODO: edit cursor if needed?
             if item.insert {
                 self.cursor = self.insert_at(item.start, &item.text, None);
@@ -601,7 +583,7 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
             Action::Insert(character) => {
                 if character.is_control() && !['\t', '\n', '\u{92}'].contains(&character) {
                     // Filter out special chars (except for tab), use Action instead
-                    log::debug!("Refusing to insert control character {character:?}");
+                    log::debug!("Refusing to insert control character {:?}", character);
                 } else if character == '\n' {
                     self.action(font_system, Action::Enter);
                 } else {
@@ -715,31 +697,21 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
                     self.with_buffer(|buffer| {
                         let line = &buffer.lines[line_i];
                         let text = line.text();
-
-                        if self.selection == Selection::None {
-                            //Selection::None counts whitespace from the cursor backwards
-                            let whitespace_length = match line.text()[0..self.cursor.index]
-                                .chars()
-                                .rev()
-                                .position(|c| !c.is_whitespace())
-                            {
-                                Some(length) => length,
-                                // The whole line is whitespace
-                                None => self.cursor.index,
-                            };
-                            required_indent = tab_width - (whitespace_length % tab_width);
-                            after_whitespace = self.cursor.index;
-                        } else {
-                            // Other selections count whitespace from  the start of the line
-                            for (count, (index, c)) in text.char_indices().enumerate() {
-                                if !c.is_whitespace() {
-                                    after_whitespace = index;
-                                    required_indent = tab_width - (count % tab_width);
-                                    break;
-                                }
+                        // Default to end of line if no non-whitespace found
+                        after_whitespace = text.len();
+                        for (count, (index, c)) in text.char_indices().enumerate() {
+                            if !c.is_whitespace() {
+                                after_whitespace = index;
+                                required_indent = tab_width - (count % tab_width);
+                                break;
                             }
                         }
                     });
+
+                    // No indent required (not possible?)
+                    if required_indent == 0 {
+                        required_indent = tab_width;
+                    }
 
                     self.insert_at(
                         Cursor::new(line_i, after_whitespace),
@@ -767,6 +739,7 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
                             }
                         }
                     }
+
                     // Request redraw
                     self.with_buffer_mut(|buffer| buffer.set_redraw(true));
                 }
@@ -882,11 +855,11 @@ impl<'buffer> Edit<'buffer> for Editor<'buffer> {
                     }
                 }
             }
-            Action::Scroll { pixels } => {
+            Action::Scroll { lines } => {
                 self.with_buffer_mut(|buffer| {
                     let mut scroll = buffer.scroll();
                     //TODO: align to layout lines
-                    scroll.vertical += pixels;
+                    scroll.vertical += lines as f32 * buffer.metrics().line_height;
                     buffer.set_scroll(scroll);
                 });
             }

@@ -17,40 +17,24 @@ fn swash_image(
     context: &mut ScaleContext,
     cache_key: CacheKey,
 ) -> Option<SwashImage> {
-    let Some(font) = font_system.get_font(cache_key.font_id, cache_key.font_weight) else {
-        log::warn!("did not find font {:?}", cache_key.font_id);
-        return None;
+    let font = match font_system.get_font(cache_key.font_id) {
+        Some(some) => some,
+        None => {
+            log::warn!("did not find font {:?}", cache_key.font_id);
+            return None;
+        }
     };
-
-    let variable_width = font
-        .as_swash()
-        .variations()
-        .find_by_tag(swash::Tag::from_be_bytes(*b"wght"));
 
     // Build the scaler
     let mut scaler = context
         .builder(font.as_swash())
         .size(f32::from_bits(cache_key.font_size_bits))
-        .hint(!cache_key.flags.contains(CacheKeyFlags::DISABLE_HINTING));
-    if let Some(variation) = variable_width {
-        scaler = scaler.variations(std::iter::once(swash::Setting {
-            tag: swash::Tag::from_be_bytes(*b"wght"),
-            value: f32::from(cache_key.font_weight.0)
-                .clamp(variation.min_value(), variation.max_value()),
-        }));
-    }
-    let mut scaler = scaler.build();
+        .hint(true)
+        .build();
 
     // Compute the fractional offset-- you'll likely want to quantize this
     // in a real renderer
-    let offset = if cache_key.flags.contains(CacheKeyFlags::PIXEL_FONT) {
-        Vector::new(
-            cache_key.x_bin.as_float().round() + 1.0,
-            cache_key.y_bin.as_float().round(),
-        )
-    } else {
-        Vector::new(cache_key.x_bin.as_float(), cache_key.y_bin.as_float())
-    };
+    let offset = Vector::new(cache_key.x_bin.as_float(), cache_key.y_bin.as_float());
 
     // Select our source order
     Render::new(&[
@@ -84,41 +68,25 @@ fn swash_outline_commands(
 ) -> Option<Box<[swash::zeno::Command]>> {
     use swash::zeno::PathData as _;
 
-    let Some(font) = font_system.get_font(cache_key.font_id, cache_key.font_weight) else {
-        log::warn!("did not find font {:?}", cache_key.font_id);
-        return None;
+    let font = match font_system.get_font(cache_key.font_id) {
+        Some(some) => some,
+        None => {
+            log::warn!("did not find font {:?}", cache_key.font_id);
+            return None;
+        }
     };
-
-    let variable_width = font
-        .as_swash()
-        .variations()
-        .find_by_tag(swash::Tag::from_be_bytes(*b"wght"));
 
     // Build the scaler
     let mut scaler = context
         .builder(font.as_swash())
         .size(f32::from_bits(cache_key.font_size_bits))
-        .hint(!cache_key.flags.contains(CacheKeyFlags::DISABLE_HINTING));
-    if let Some(variation) = variable_width {
-        scaler = scaler.variations(std::iter::once(swash::Setting {
-            tag: swash::Tag::from_be_bytes(*b"wght"),
-            value: f32::from(cache_key.font_weight.0)
-                .clamp(variation.min_value(), variation.max_value()),
-        }));
-    }
-    let mut scaler = scaler.build();
+        .hint(true)
+        .build();
 
     // Scale the outline
-    let mut outline = scaler
+    let outline = scaler
         .scale_outline(cache_key.glyph_id)
         .or_else(|| scaler.scale_color_outline(cache_key.glyph_id))?;
-
-    if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
-        outline.transform(&Transform::skew(
-            Angle::from_degrees(14.0),
-            Angle::from_degrees(0.0),
-        ));
-    }
 
     // Get the path information of the outline
     let path = outline.path();
@@ -191,6 +159,56 @@ impl SwashCache {
         swash_outline_commands(font_system, &mut self.context, cache_key)
     }
 
+    /// Pre-render multiple glyphs at once for faster first-frame rendering
+    ///
+    /// This warms the glyph cache before actual rendering, reducing
+    /// frame drops during initial display.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let glyphs = buffer.layout_runs()
+    ///     .flat_map(|run| run.glyphs)
+    ///     .map(|g| g.cache_key);
+    /// swash_cache.prerender_glyphs(&mut font_system, glyphs);
+    /// ```
+    pub fn prerender_glyphs<I: IntoIterator<Item = CacheKey>>(
+        &mut self,
+        font_system: &mut FontSystem,
+        cache_keys: I,
+    ) {
+        for cache_key in cache_keys {
+            self.get_image(font_system, cache_key);
+        }
+    }
+
+    /// Pre-render all glyphs in a text buffer
+    ///
+    /// Convenience method that extracts cache keys from a buffer's layout runs.
+    pub fn prerender_buffer(&mut self, font_system: &mut FontSystem, buffer: &crate::Buffer) {
+        for run in buffer.layout_runs() {
+            for glyph in run.glyphs {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                self.get_image(font_system, physical.cache_key);
+            }
+        }
+    }
+
+    /// Clear the image cache to free memory
+    pub fn clear_cache(&mut self) {
+        self.image_cache.clear();
+        self.outline_command_cache.clear();
+    }
+
+    /// Get the number of cached images
+    pub fn cached_count(&self) -> usize {
+        self.image_cache.len()
+    }
+
+    /// Get the number of cached outline commands
+    pub fn outline_cache_count(&self) -> usize {
+        self.outline_command_cache.len()
+    }
+
     /// Enumerate pixels in an Image, use `with_image` for better performance
     pub fn with_pixels<F: FnMut(i32, i32, Color)>(
         &mut self,
@@ -212,7 +230,7 @@ impl SwashCache {
                             f(
                                 x + off_x,
                                 y + off_y,
-                                Color((u32::from(image.data[i]) << 24) | base.0 & 0xFF_FF_FF),
+                                Color(((image.data[i] as u32) << 24) | base.0 & 0xFF_FF_FF),
                             );
                             i += 1;
                         }

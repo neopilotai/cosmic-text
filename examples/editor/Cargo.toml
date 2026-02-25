@@ -7,15 +7,15 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-cosmic-text = { path = "../..", features = ["syntect"] }
-env_logger = "0.11"
-fontdb = "0.23"
+fastui-cosmic = { path = "../..", features = ["syntect"] }
+env_logger = "0.10"
+fontdb = "0.13"
 log = "0.4"
 softbuffer = "0.4"
 tiny-skia = "0.11"
-unicode-segmentation = "1.12"
+unicode-segmentation = "1.7"
 winit = "0.29"
 
 [features]
 default = []
-vi = ["cosmic-text/vi"]
+vi = ["fastui-cosmic/vi"]

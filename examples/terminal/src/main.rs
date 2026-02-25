@@ -4,7 +4,7 @@
 //! or `cargo run --package terminal -- "my own text"`
 
 use colored::Colorize;
-use cosmic_text::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache};
+use fastui_cosmic::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache};
 use std::fmt::Write;
 
 fn main() {
@@ -36,7 +36,7 @@ fn main() {
     let text = std::env::args()
         .nth(1)
         .unwrap_or(" Hi, Rust! 🦀 ".to_string());
-    buffer.set_text(&text, &attrs, Shaping::Advanced, None);
+    buffer.set_text(&text, &attrs, Shaping::Advanced);
 
     // Perform shaping as desired
     buffer.shape_until_scroll(true);

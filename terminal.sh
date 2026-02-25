@@ -1,1 +1,1 @@
-RUST_LOG=cosmic_text=debug,terminal=debug cargo run --release --package terminal -- "$@"
+RUST_LOG=fastui_cosmic=debug,terminal=debug cargo run --release --package terminal -- "$@"
